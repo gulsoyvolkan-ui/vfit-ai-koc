@@ -22,45 +22,10 @@ else:
 
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
-# --- CSS / Arka Plan Ayarı ---
 # --- Banner / Kapak Görseli ---
 # Kullanıcının eklediği görseli en tepeye yerleştirelim
 if os.path.exists("data/arkaplan resmi.webp"):
     st.image("data/arkaplan resmi.webp", use_container_width=True)
-
-# Deprecated CSS function removed
-def set_background_removed(goal):
-    pass
-
-    # Basit bir eşleşme ile arka plan URL'si belirleyelim
-    bg_url = "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop" # Varsayılan (Gym)
-    
-    if "Kilo" in goal or "Yağ" in goal:
-        bg_url = "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=2070&auto=format&fit=crop" # Cardio / Koşu
-    elif "Kas" in goal or "Hacim" in goal:
-        bg_url = "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=2070&auto=format&fit=crop" # Ağırlık / Dumbbell
-        
-    page_bg_img = f"""
-    <style>
-    [data-testid="stAppViewContainer"] {
-        background-image: url("{bg_url}");
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }
-    [data-testid="stHeader"] {
-        background-color: rgba(0,0,0,0);
-    }
-    /* Okunabilirlik için ana paneli biraz karartalım */
-    .stChatFloatingInputContainer {{
-        background-color: rgba(0,0,0,0.7);
-    }}
-    </style>
-    """
-    st.markdown(page_bg_img, unsafe_allow_html=True)
-
-
-
 
 @st.cache_resource
 def init_rag():
@@ -70,14 +35,15 @@ def init_rag():
     
     # 2. PDF ve TXT Dosyalarını Yükle
     docs = []
-    # PDF'leri yükle
+    
+    # PDF Yükleyici
     pdf_loader = PyPDFDirectoryLoader("data")
     docs.extend(pdf_loader.load())
     
-    # TXT (Video Linklerini) yükle
-    from langchain_community.document_loaders import TextLoader
+    # TXT Yükleyici (Manuel)
     for file in os.listdir("data"):
         if file.endswith(".txt"):
+            from langchain_community.document_loaders import TextLoader
             txt_loader = TextLoader(os.path.join("data", file))
             docs.extend(txt_loader.load())
 
@@ -150,32 +116,57 @@ with st.sidebar:
         
     st.markdown(f"**Durum:** <span style='color:{color}; font-size:18px; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
     
-    # Basit bir bar göstergesi
-    st.progress(min(bmi / 40, 1.0))
-    
-    # Cinsiyete Göre Görsel
-    if gender == "Erkek":
-        st.info("💪 Güç ve Disiplin!")
-    else:
-        st.info("🧘‍♀️ Denge ve Güç!")
-
     st.markdown("---")
-    st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
+    
+    # Programı İndir Butonu
+    if st.button("📥 Programı İndir"):
+        # Son cevabı al
+        if "messages" in st.session_state and st.session_state.messages:
+            last_response = st.session_state.messages[-1]["content"]
+            st.download_button(
+                label="Dosyayı Kaydet",
+                data=last_response,
+                file_name=f"VFit_Program_{name}.md",
+                mime="text/markdown"
+            )
+        else:
+            st.warning("Henüz bir program oluşturulmadı.")
 
-st.title("💡 V-Fit AI: Akıllı Antrenör")
+    if st.button("🗑️ Sohbeti Temizle"):
+        st.session_state.messages = []
+        st.experimental_rerun()
+
+# RAG Sistemini Başlat
 vectorstore = init_rag()
 
-if vectorstore:
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.3)
-    qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vectorstore.as_retriever())
+if vectorstore is None:
+    st.error("Veri klasörü bulunamadı veya boş! Lütfen 'data' klasörüne PDF/TXT ekleyin.")
+else:
+    # Zinciri Kur
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
+    
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True
+    )
 
-    if "messages" not in st.session_state: st.session_state.messages = []
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    # Chat Arayüzü
+    st.header("🤖 V-Fit Asistanı")
 
-    if prompt := st.chat_input("Nasıl yardımcı olabilirim? (Örn: 'Bana 8 haftalık program yaz')"):
-        st.chat_message("user").markdown(prompt)
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if prompt := st.chat_input("Sorunu sor (Örn: Bana program hazırla)..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
         
         # Konuşma Geçmişini Hazırla
         chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages[-5:]])
@@ -239,45 +230,26 @@ if vectorstore:
                 keywords = file_name_clean.split()
                 
                 # Eşleşme kontrolü (Anahtar kelime cevapta geçiyor mu?)
-                # 'Kası' gibi genel kelimeleri hariç tutarak kontrol et
-                if any(word in response.lower() for word in keywords if len(word) > 3 and word not in ["kası", "genel", "egzersizleri"]):
-                    
-                    if file_name_clean not in found_files:
-                        found_files.append(file_name_clean)
+                # Basit bir set intersection mantığı veya kelime kelime kontrol
+                # Örn: "arka kol" dosyasını bulmak için hem "arka" hem "kol" cevapta geçmeli mi? Evet.
+                match_count = 0
+                for kw in keywords:
+                    if kw in response.lower():
+                        match_count += 1
+                
+                # Eğer dosya ismindeki tüm kelimeler cevapta geçiyorsa (veya en az %80'i)
+                if match_count == len(keywords) and len(keywords) > 0:
+                    if file not in found_files:
+                        st.info(f"💡 İlgili Kaynak Bulundu: {file}")
                         
                         file_path = os.path.join("data", file)
-                        
-                        # Görsel ise göster
-                        if file_lower.endswith(('.png', '.jpg', '.jpeg')):
-                            st.image(file_path, caption=f"Hedef Bölge: {os.path.splitext(file)[0]}")
-                        
-                        # PDF ise indirilebilir link sun (Görsel yoksa alternatif kaynak)
-                        elif file_lower.endswith('.pdf'):
-                            # PDF dosyasını okumak için binary modda aç
+                        if file.endswith((".jpg", ".png", ".jpeg", ".webp")):
+                            st.image(file_path, caption=file_name_clean, use_container_width=True)
+                        elif file.endswith(".pdf"):
+                            # PDF indirme butonu koyalım veya görüntüleyelim (Streamlit PDF viewer gerekebilir, şimdilik indirme)
                             with open(file_path, "rb") as pdf_file:
-                                PDFbyte = pdf_file.read()
-                            
-                            st.download_button(label=f"📄 '{file}' Dosyasını İncele",
-                                                data=PDFbyte,
-                                                file_name=file,
-                                                mime='application/octet-stream')
-        
-        st.session_state.messages.append({"role": "assistant", "content": response})
+                                st.download_button(label=f"📄 {file} İndir", data=pdf_file, file_name=file, mime="application/pdf")
+                        
+                        found_files.append(file)
 
-    # Sidebar Footer (Butonlar)
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🗑️ Sohbeti Temizle"):
-        st.session_state.messages = []
-        st.rerun()
-
-    # Sohbet İndirme
-    chat_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
-    st.sidebar.download_button(
-        label="📥 Programı İndir (TXT)",
-        data=chat_text,
-        file_name=f"VFit_Program_{name}.txt",
-        mime="text/plain"
-    )
-
-elif not vectorstore:
-    st.warning("Lütfen 'data' klasörüne dosyaları yükleyip sayfayı yenile!")
+            st.session_state.messages.append({"role": "assistant", "content": response})
