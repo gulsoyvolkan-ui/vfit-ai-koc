@@ -8,8 +8,13 @@ from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
 
-# ÖNEMLİ: API Anahtarını buraya yapıştır
-os.environ["GOOGLE_API_KEY"] = "AIzaSyBEIe2cTwCBMvtmwk15n4DYm0kiDWiXCyw"
+# ÖNEMLİ: API Anahtarı Ayarı
+# Streamlit Cloud üzerinde 'st.secrets' kullanılır. Yerelde ise bu satır çalışır.
+if "GOOGLE_API_KEY" in st.secrets:
+    os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+else:
+    # Yerel Geliştirme İçin (Canlıya alırken burayı silmeniz önerilir)
+    os.environ["GOOGLE_API_KEY"] = "AIzaSyBEIe2cTwCBMvtmwk15n4DYm0kiDWiXCyw"
 
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
