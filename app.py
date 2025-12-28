@@ -271,7 +271,10 @@ else:
         
         # Hata yönetimi için try-except bloğu (zaten dışarıda var sistem tarafından yönetilen, ama promptu güvenli hale getirdik)
         full_query = f"{system_instruction} \n Cevap:"
-        raw_response = qa_chain.run(full_query)
+        
+        # .run() yerine .invoke() kullanalım (Daha güvenli ve modern)
+        result_dict = qa_chain.invoke({"query": full_query})
+        raw_response = result_dict['result']
         
         # --- POST-PROCESSING: Link Düzeltme ---
         # LLM'in uydurduğu linkleri temizleyip kendi veritabanımızdan doğrusunu çakalım
