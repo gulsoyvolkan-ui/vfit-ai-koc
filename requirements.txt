@@ -6,4 +6,4 @@ langchain-text-splitters
 chromadb
 pypdf
 numpy
-# Trigger Rebuild 2
+pysqlite3-binary
