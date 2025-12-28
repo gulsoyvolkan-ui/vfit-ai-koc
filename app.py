@@ -23,7 +23,15 @@ else:
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
 # --- CSS / Arka Plan Ayarı ---
-def set_background(goal):
+# --- Banner / Kapak Görseli ---
+# Kullanıcının eklediği görseli en tepeye yerleştirelim
+if os.path.exists("data/arkaplan resmi.webp"):
+    st.image("data/arkaplan resmi.webp", use_container_width=True)
+
+# Deprecated CSS function removed
+def set_background_removed(goal):
+    pass
+
     # Basit bir eşleşme ile arka plan URL'si belirleyelim
     bg_url = "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop" # Varsayılan (Gym)
     
