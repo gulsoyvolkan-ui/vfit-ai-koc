@@ -11,7 +11,70 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain.chains import RetrievalQA
 
+# --- Deterministic Video Link System ---
+class VideoDatabase:
+    def __init__(self):
+        self.video_map = {} # {"hareket ismi": "url"}
+        self.load_database()
+    
+    def load_database(self):
+        """Tüm TXT dosyalarını tarar ve Hareket -> URL eşleşmesi çıkarır"""
+        if not os.path.exists("data"): return
+        
+        for file in os.listdir("data"):
+            if file.endswith(".txt"):
+                with open(os.path.join("data", file), "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for i in range(len(lines)):
+                        line = lines[i].strip()
+                        # Eğer satır bir URL ise (https://youtu...)
+                        if line.startswith("https://") and i > 0:
+                            # Bir önceki satır hareket ismidir (Örn: "1)Smith Machine...")
+                            prev_line = lines[i-1].strip()
+                            # İsim temizliği: "1) Hareket" -> "hareket"
+                            # Parantez, numara ve boşlukları temizleyelim
+                            clean_name = re.sub(r'^\d+\)', '', prev_line).strip()
+                            self.video_map[clean_name.lower()] = line
+                            
+    def get_video_link(self, query_text):
+        """Metin içinde geçen hareketleri bulur ve link ekler"""
+        # Bu fonksiyon LLM cevabını (query_text) alır ve içine linkleri gömer
+        processed_text = query_text
+        
+        # En uzun isimden en kısaya doğru sıralayalım ki "Incline Bench" varken "Bench" ile eşleşmesin
+        sorted_keys = sorted(self.video_map.keys(), key=len, reverse=True)
+        
+        for exercise in sorted_keys:
+            # Hareket ismi metinde geçiyor mu? (Case insensitive)
+            # Regex ile kelime sınırı kontrolü yapalım
+            pattern = re.compile(re.escape(exercise), re.IGNORECASE)
+            
+            # Eğer metinde geçiyorsa ve yanında zaten link yoksa
+            if pattern.search(processed_text):
+                url = self.video_map[exercise]
+                link_md = f" [📺 Video]({url})"
+                
+                # Sadece ilk eşleşmeye veya link olmayan eşleşmelere ekle
+                # Basitçe: Hareketi bul ve yanına linki ekle (Eğer zaten ekli değilse)
+                # Not: Bu karmaşık olabilir, basit string replace yapalım ama link tekrarını önleyelim.
+                
+                def replace_func(match):
+                    # Eşleşen kısmın (hareket isminin) hemen sonrasına bak
+                    end = match.end()
+                    # Eğer sonrasında zaten "(http" veya "[📺" varsa ekleme yapma
+                    if end < len(processed_text) and (processed_text[end:end+5] in ["(http", "[📺 "]):
+                        return match.group(0)
+                    return f"{match.group(0)}{link_md}"
+                
+                processed_text = pattern.sub(replace_func, processed_text)
+                
+        return processed_text
+
+# Video veritabanını başlat
+video_db = VideoDatabase()
 # ÖNEMLİ: API Anahtarı Ayarı
 # Streamlit Cloud üzerinde 'st.secrets' kullanılır. Yerelde ise bu satır çalışır.
 if "GOOGLE_API_KEY" in st.secrets:
@@ -191,17 +254,9 @@ else:
            - **3. Blok (Hafta 9-12):** Güç ve Dayanıklılık.
            - **4. Blok (Hafta 13-16):** Definasyon ve Sonuç.
            *Tabloyu detaylı hazırla ve haftalık gün sayısına ({frequency} gün) sadık kal.*
-        4. **Video Entegrasyonu (Görsel Eğitim):** Hareketleri yazarken, eğer veritabanında o hareketin video linki varsa, **MUTLAKA** hareketin yanına veya altına şu formatta ekle:
-           `[📺 Video](LİNKİN_KENDİSİ)`
-           
-           **ÇOK ÖNEMLİ KURALLAR:**
-           *   Linkin görünen metni SADECE "📺 Video" olacak. Hareket ismini linkin içine veya metnine YAZMA.
-           *   Veritabanından gelen link `https://youtu.be/...` şeklindedir. Bunu ASLA `youtube.com/hareketismi` gibi bir şeye çevirme.
-           *   Dosyada ne görüyorsan (örn: `https://youtu.be/V9xzZK3lN-M`) harfi harfine aynısını kullan.
-           
-           Örn:
-           *   **Squat** [📺 Video](https://youtu.be/V9xzZK3lN-M)
-        5. **Link Formatı:** Sadece yukarıdaki gibi `[📺 Video](URL)` formatını kullan.
+        4. **Video Entegrasyonu:** Sen sadece hareket isimlerini doğru yaz (Örn: "Smith Machine Close Grip Bench Press"). Linkleri veya videoları eklemene gerek yok, sistem otomatik ekleyecek.
+        5. **Link Formatı:** Link ekleme işini sisteme bırak.
+        6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) hareket isimlerini kullan.
         6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) terimleri kullanıcıya açıkla.
         7. **Akıllı Tepki (YENİ):** Kullanıcı sadece "Merhaba", "Selam", "Nasılsın" gibi tanışma cümleleri kurarsa, direkt program hazırlama. Hal hatır sor, hedefini teyit et ve motive et. Sadece "Program hazırla" veya spesifik bir teknik soru gelirse program moduna geç.
         8. **Sağlık Uyarısı (Disclaimer):** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
@@ -217,13 +272,18 @@ else:
         
         # Hata yönetimi için try-except bloğu (zaten dışarıda var sistem tarafından yönetilen, ama promptu güvenli hale getirdik)
         full_query = f"{system_instruction} \n Cevap:"
-        response = qa_chain.run(full_query)
+        raw_response = qa_chain.run(full_query)
+        
+        # --- POST-PROCESSING: Link Düzeltme ---
+        # LLM'in uydurduğu linkleri temizleyip kendi veritabanımızdan doğrusunu çakalım
+        # Öncelik: LLM'e "link koyma" desek bile koyabilir. O yüzden önce kendi DB'mizden geçirip garantili linkleri ekleyelim.
+        final_response = video_db.get_video_link(raw_response)
         
         with st.chat_message("assistant"):
-            st.markdown(response)
+            st.markdown(final_response)
             
             # 1. Video linkini ayıkla ve oynat
-            video_links = re.findall(r'(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+|https?://youtu\.be/[\w-]+)', response)
+            video_links = re.findall(r'(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+|https?://youtu\.be/[\w-]+)', final_response)
             if video_links:
                 st.video(video_links[0])
             
@@ -259,4 +319,4 @@ else:
                         
                         found_files.append(file)
 
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "assistant", "content": final_response})
