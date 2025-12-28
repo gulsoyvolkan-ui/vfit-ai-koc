@@ -5,3 +5,5 @@ langchain-google-genai
 langchain-text-splitters
 chromadb
 pypdf
+numpy
+# Trigger Rebuild 2
