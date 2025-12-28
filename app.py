@@ -22,6 +22,36 @@ else:
 
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
+# --- CSS / Arka Plan Ayarı ---
+def set_background(goal):
+    # Basit bir eşleşme ile arka plan URL'si belirleyelim
+    bg_url = "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop" # Varsayılan (Gym)
+    
+    if "Kilo" in goal or "Yağ" in goal:
+        bg_url = "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=2070&auto=format&fit=crop" # Cardio / Koşu
+    elif "Kas" in goal or "Hacim" in goal:
+        bg_url = "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=2070&auto=format&fit=crop" # Ağırlık / Dumbbell
+        
+    page_bg_img = f"""
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background-image: url("{bg_url}");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    [data-testid="stHeader"] {
+        background-color: rgba(0,0,0,0);
+    }
+    /* Okunabilirlik için ana paneli biraz karartalım */
+    .stChatFloatingInputContainer {{
+        background-color: rgba(0,0,0,0.7);
+    }}
+    </style>
+    """
+    st.markdown(page_bg_img, unsafe_allow_html=True)
+
+
 
 
 @st.cache_resource
@@ -83,6 +113,9 @@ with st.sidebar:
     height = st.number_input("Boy (cm):", 100, 250, 175)
     weight = st.number_input("Kutu (kg):", 40, 150, 80)
     goal = st.selectbox("Hedefin:", ("Kas Kütlesi Kazanımı", "Yağ Yakımı", "Kondisyon", "Sağlıklı Yaşam"))
+    # Arka planı hedefe göre ayarla
+    set_background(goal)
+    
     frequency = st.slider("Haftada kaç gün antrenman?", 1, 7, 3)
     
     st.markdown("---")
@@ -166,9 +199,11 @@ if vectorstore:
                (📺 İzle: https://youtube.com/...)
         5. **Link Formatı:** Linkleri tıklanabilir yap.
         6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) terimleri kullanıcıya açıkla.
-        7. **Sağlık Uyarısı (Disclaimer):** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
+        7. **Akıllı Tepki (YENİ):** Kullanıcı sadece "Merhaba", "Selam", "Nasılsın" gibi tanışma cümleleri kurarsa, direkt program hazırlama. Hal hatır sor, hedefini teyit et ve motive et. Sadece "Program hazırla" veya spesifik bir teknik soru gelirse program moduna geç.
+        8. **Sağlık Uyarısı (Disclaimer):** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
         
         MİSYONUN: Kullanıcıyı hedefine ({goal}) ulaştırmak için en bilimsel ve uygulanabilir yolu çizmek.
+
         
         Geçmiş Konuşmalar:
         {chat_history}
