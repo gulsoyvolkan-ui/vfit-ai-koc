@@ -3,7 +3,7 @@ langchain
 langchain-community
 langchain-google-genai
 langchain-text-splitters
-chromadb
+chromadb==0.5.5
 pypdf
-numpy
+numpy<2
 pysqlite3-binary
