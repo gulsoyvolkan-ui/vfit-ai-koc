@@ -191,10 +191,10 @@ else:
            - **3. Blok (Hafta 9-12):** Güç ve Dayanıklılık.
            - **4. Blok (Hafta 13-16):** Definasyon ve Sonuç.
            *Tabloyu detaylı hazırla ve haftalık gün sayısına ({frequency} gün) sadık kal.*
-        4. **Video Entegrasyonu (Görsel Eğitim):** Hareketleri yazarken, eğer veritabanında o hareketin video linki varsa, **MUTLAKA** hareketin hemen altına linkini ekle. Örn:
+        4. **Video Entegrasyonu (Görsel Eğitim):** Hareketleri yazarken, eğer veritabanında o hareketin video linki varsa, **MUTLAKA** hareketin hemen altına tıklanabilir link formatında ekle. Örn:
            *   **Bench Press**
-               (📺 İzle: https://youtube.com/...)
-        5. **Link Formatı:** Linkleri tıklanabilir yap.
+               [📺 İzle ve Öğren](https://youtube.com/...)
+        5. **Link Formatı:** Asla sadece URL yazma. Mutlaka `[Link Başlığı](URL)` formatını kullan.
         6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) terimleri kullanıcıya açıkla.
         7. **Akıllı Tepki (YENİ):** Kullanıcı sadece "Merhaba", "Selam", "Nasılsın" gibi tanışma cümleleri kurarsa, direkt program hazırlama. Hal hatır sor, hedefini teyit et ve motive et. Sadece "Program hazırla" veya spesifik bir teknik soru gelirse program moduna geç.
         8. **Sağlık Uyarısı (Disclaimer):** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
