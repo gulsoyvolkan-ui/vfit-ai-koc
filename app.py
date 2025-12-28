@@ -113,8 +113,6 @@ with st.sidebar:
     height = st.number_input("Boy (cm):", 100, 250, 175)
     weight = st.number_input("Kutu (kg):", 40, 150, 80)
     goal = st.selectbox("Hedefin:", ("Kas Kütlesi Kazanımı", "Yağ Yakımı", "Kondisyon", "Sağlıklı Yaşam"))
-    # Arka planı hedefe göre ayarla
-    set_background(goal)
     
     frequency = st.slider("Haftada kaç gün antrenman?", 1, 7, 3)
     
