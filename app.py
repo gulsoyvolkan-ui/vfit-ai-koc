@@ -37,36 +37,39 @@ class VideoDatabase:
                             # İsim temizliği: "1) Hareket" -> "hareket"
                             # Parantez, numara ve boşlukları temizleyelim
                             clean_name = re.sub(r'^\d+\)', '', prev_line).strip()
-                            self.video_map[clean_name.lower()] = line
+                            
+                            # BOŞ KEY KONTROLÜ (Çok Önemli): Eğer isim boşsa veya çok kısaysa ekleme!
+                            if len(clean_name) > 2:
+                                self.video_map[clean_name.lower()] = line
                             
     def get_video_link(self, query_text):
         """Metin içinde geçen hareketleri bulur ve link ekler"""
-        # Bu fonksiyon LLM cevabını (query_text) alır ve içine linkleri gömer
+        # Hata koruması: Text boşsa direkt dön
+        if not query_text: return ""
+
         processed_text = query_text
         
-        # En uzun isimden en kısaya doğru sıralayalım ki "Incline Bench" varken "Bench" ile eşleşmesin
+        # En uzun isimden en kısaya doğru sıralayalım
         sorted_keys = sorted(self.video_map.keys(), key=len, reverse=True)
         
         for exercise in sorted_keys:
             # Hareket ismi metinde geçiyor mu? (Case insensitive)
-            # Regex ile kelime sınırı kontrolü yapalım
             pattern = re.compile(re.escape(exercise), re.IGNORECASE)
             
-            # Eğer metinde geçiyorsa ve yanında zaten link yoksa
+            # Eğer metinde geçiyorsa
             if pattern.search(processed_text):
                 url = self.video_map[exercise]
                 link_md = f" [📺 Video]({url})"
                 
-                # Sadece ilk eşleşmeye veya link olmayan eşleşmelere ekle
-                # Basitçe: Hareketi bul ve yanına linki ekle (Eğer zaten ekli değilse)
-                # Not: Bu karmaşık olabilir, basit string replace yapalım ama link tekrarını önleyelim.
-                
                 def replace_func(match):
-                    # Eşleşen kısmın (hareket isminin) hemen sonrasına bak
+                    # Zaten linklenmiş mi kontrol et
+                    start = match.start()
                     end = match.end()
-                    # Eğer sonrasında zaten "(http" veya "[📺" varsa ekleme yapma
-                    if end < len(processed_text) and (processed_text[end:end+5] in ["(http", "[📺 "]):
-                        return match.group(0)
+                    # Basit kontrol: Daha önce eklenmiş bir linkin içinde miyiz? (Bu zor, o yüzden basit append yapalım)
+                    # Eğer hemen sonrasında "(" veya "[" varsa elleme
+                    snippet_after = processed_text[end:end+5]
+                    if snippet_after.startswith("(") or snippet_after.startswith("["):
+                         return match.group(0)
                     return f"{match.group(0)}{link_md}"
                 
                 processed_text = pattern.sub(replace_func, processed_text)
@@ -155,7 +158,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
-    st.caption("Sürüm: v1.0.2 (Oto-Link Fix)")
+    st.caption("Sürüm: v1.0.3 (Stable Model)")
     
     # BMI Hesaplama
     bmi = weight / ((height/100)**2)
@@ -208,10 +211,8 @@ if vectorstore is None:
 else:
     # Zinciri Kur
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
-    
     qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
+        llm=ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3),
         chain_type="stuff",
         retriever=retriever
     )
@@ -274,8 +275,9 @@ else:
         full_query = f"{system_instruction} \n Cevap:"
         
         # .run() yerine .invoke() kullanalım (Daha güvenli ve modern)
-        result_dict = qa_chain.invoke({"query": full_query})
-        raw_response = result_dict['result']
+        with st.spinner('V-Fit Koç düşünüyor ve program hazırlıyor...'):
+            result_dict = qa_chain.invoke({"query": full_query})
+            raw_response = result_dict['result']
         
         # --- POST-PROCESSING: Link Düzeltme ---
         # LLM'in uydurduğu linkleri temizleyip kendi veritabanımızdan doğrusunu çakalım
