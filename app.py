@@ -154,7 +154,8 @@ with st.sidebar:
     frequency = st.slider("Haftada kaç gün antrenman?", 1, 7, 3)
     
     st.markdown("---")
-    st.header("Vücut Analizi")
+    st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
+    st.caption("Sürüm: v1.0.2 (Oto-Link Fix)")
     
     # BMI Hesaplama
     bmi = weight / ((height/100)**2)
