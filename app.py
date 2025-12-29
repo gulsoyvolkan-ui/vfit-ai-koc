@@ -79,12 +79,12 @@ class VideoDatabase:
 # Video veritabanını başlat
 video_db = VideoDatabase()
 # ÖNEMLİ: API Anahtarı Ayarı
-# Streamlit Cloud üzerinde 'st.secrets' kullanılır. Yerelde ise bu satır çalışır.
+# API anahtarı SADECE Streamlit Secrets'tan alınır (güvenlik için)
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 else:
-    # Yerel Geliştirme İçin (Canlıya alırken burayı silmeniz önerilir)
-    os.environ["GOOGLE_API_KEY"] = "AIzaSyBEIe2cTwCBMvtmwk15n4DYm0kiDWiXCyw"
+    st.error("⚠️ API anahtarı bulunamadı! Lütfen Streamlit Secrets'a 'GOOGLE_API_KEY' ekleyin.")
+    st.stop()
 
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
@@ -158,7 +158,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
-    st.caption("Sürüm: v1.0.5 (Pro Model)")
+    st.caption("Sürüm: v1.0.6 (Security Fix)")
     
     # BMI Hesaplama
     bmi = weight / ((height/100)**2)
