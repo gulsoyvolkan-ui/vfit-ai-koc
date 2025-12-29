@@ -158,7 +158,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
-    st.caption("Sürüm: v1.0.3 (Stable Model)")
+    st.caption("Sürüm: v1.0.4 (Model Path Fix)")
     
     # BMI Hesaplama
     bmi = weight / ((height/100)**2)
@@ -212,7 +212,7 @@ else:
     # Zinciri Kur
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
     qa_chain = RetrievalQA.from_chain_type(
-        llm=ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3),
+        llm=ChatGoogleGenerativeAI(model="models/gemini-1.5-flash", temperature=0.3),
         chain_type="stuff",
         retriever=retriever
     )
