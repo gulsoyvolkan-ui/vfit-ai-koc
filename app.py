@@ -6,13 +6,12 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import os
 import time
 import re
-from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_community.document_loaders import PyPDFDirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from google import genai
+from google.genai import types
 
 # --- Deterministic Video Link System ---
 class VideoDatabase:
@@ -35,38 +34,28 @@ class VideoDatabase:
                             # Bir önceki satır hareket ismidir (Örn: "1)Smith Machine...")
                             prev_line = lines[i-1].strip()
                             # İsim temizliği: "1) Hareket" -> "hareket"
-                            # Parantez, numara ve boşlukları temizleyelim
                             clean_name = re.sub(r'^\d+\)', '', prev_line).strip()
                             
-                            # BOŞ KEY KONTROLÜ (Çok Önemli): Eğer isim boşsa veya çok kısaysa ekleme!
+                            # BOŞ KEY KONTROLÜ: Eğer isim boşsa veya çok kısaysa ekleme!
                             if len(clean_name) > 2:
                                 self.video_map[clean_name.lower()] = line
                             
     def get_video_link(self, query_text):
         """Metin içinde geçen hareketleri bulur ve link ekler"""
-        # Hata koruması: Text boşsa direkt dön
         if not query_text: return ""
 
         processed_text = query_text
-        
-        # En uzun isimden en kısaya doğru sıralayalım
         sorted_keys = sorted(self.video_map.keys(), key=len, reverse=True)
         
         for exercise in sorted_keys:
-            # Hareket ismi metinde geçiyor mu? (Case insensitive)
             pattern = re.compile(re.escape(exercise), re.IGNORECASE)
             
-            # Eğer metinde geçiyorsa
             if pattern.search(processed_text):
                 url = self.video_map[exercise]
                 link_md = f" [📺 Video]({url})"
                 
                 def replace_func(match):
-                    # Zaten linklenmiş mi kontrol et
-                    start = match.start()
                     end = match.end()
-                    # Basit kontrol: Daha önce eklenmiş bir linkin içinde miyiz? (Bu zor, o yüzden basit append yapalım)
-                    # Eğer hemen sonrasında "(" veya "[" varsa elleme
                     snippet_after = processed_text[end:end+5]
                     if snippet_after.startswith("(") or snippet_after.startswith("["):
                          return match.group(0)
@@ -78,10 +67,11 @@ class VideoDatabase:
 
 # Video veritabanını başlat
 video_db = VideoDatabase()
+
 # ÖNEMLİ: API Anahtarı Ayarı
-# API anahtarı SADECE Streamlit Secrets'tan alınır (güvenlik için)
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    api_key = st.secrets["GOOGLE_API_KEY"]
 else:
     st.error("⚠️ API anahtarı bulunamadı! Lütfen Streamlit Secrets'a 'GOOGLE_API_KEY' ekleyin.")
     st.stop()
@@ -89,7 +79,6 @@ else:
 st.set_page_config(page_title="V-Fit AI Koç", page_icon="💪", layout="wide")
 
 # --- Banner / Kapak Görseli ---
-# Kullanıcının eklediği görseli en tepeye yerleştirelim
 if os.path.exists("data/arkaplan resmi.webp"):
     st.image("data/arkaplan resmi.webp", use_container_width=True)
 
@@ -106,10 +95,9 @@ def init_rag():
     pdf_loader = PyPDFDirectoryLoader("data")
     docs.extend(pdf_loader.load())
     
-    # TXT Yükleyici (Manuel)
+    # TXT Yükleyici
     for file in os.listdir("data"):
         if file.endswith(".txt"):
-            from langchain_community.document_loaders import TextLoader
             txt_loader = TextLoader(os.path.join("data", file))
             docs.extend(txt_loader.load())
 
@@ -117,32 +105,33 @@ def init_rag():
     splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=100)
     splits = splitter.split_documents(docs)
     
-    # 4. Google Embedding Modelini Tanımla
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    # 4. Ücretsiz Embedding Modeli (HuggingFace)
+    # Google Embeddings yerine HuggingFace kullanıyoruz (API kotası yok)
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
     
-    # 5. KOTA KORUMALI YÜKLEME (Vektör Veritabanı)
-    # Boş bir veritabanı oluştur
+    # 5. Vektör Veritabanı
     vectorstore = Chroma(embedding_function=embeddings)
     
-    # Verileri 5'erli paketler halinde gönder ve aralarda uyu (Sleep)
+    # 6. Verileri 5'erli paketler halinde ekle
     progress_bar = st.sidebar.progress(0)
     total_splits = len(splits)
     
     for i in range(0, total_splits, 5):
         chunk = splits[i:i+5]
         vectorstore.add_documents(chunk)
+        time.sleep(1)  # Kota koruması
         
-        # Kota hatasını önlemek için bekleme süresi
-        time.sleep(2) 
-        
-        # İlerlemeyi göster
         progress = (i + len(chunk)) / total_splits
         progress_bar.progress(progress)
     
-    progress_bar.empty() # İşlem bitince barı kaldır
+    progress_bar.empty()
     return vectorstore
 
-# Arayüz
+# Google Genai Client oluştur
+client = genai.Client(api_key=api_key)
+
 # Arayüz
 st.sidebar.title("🏋️‍♂️ Profil ve Ayarlar")
 with st.sidebar:
@@ -151,35 +140,30 @@ with st.sidebar:
     gender = st.radio("Cinsiyet:", ("Erkek", "Kadın"))
     age = st.number_input("Yaş:", 10, 100, 25)
     height = st.number_input("Boy (cm):", 100, 250, 175)
-    weight = st.number_input("Kutu (kg):", 40, 150, 80)
+    weight = st.number_input("Kilo (kg):", 40, 150, 80)
     goal = st.selectbox("Hedefin:", ("Kas Kütlesi Kazanımı", "Yağ Yakımı", "Kondisyon", "Sağlıklı Yaşam"))
     
     frequency = st.slider("Haftada kaç gün antrenman?", 1, 7, 3)
     
     st.markdown("---")
     st.caption("Kaynak: V-Fit AI & Submaksimal Fitness")
-    st.caption("Sürüm: v1.0.6 (Security Fix)")
+    st.caption("Sürüm: v1.1.0 (Native SDK)")
     
     # BMI Hesaplama
     bmi = weight / ((height/100)**2)
     st.metric("Vücut Kitle İndeksi (BMI)", f"{bmi:.1f}")
     
-    # BMI Skalası ve Renkler
+    # BMI Skalası
     if bmi < 18.5:
-        status = "Zayıf"
-        color = "blue"
+        status, color = "Zayıf", "blue"
     elif 18.5 <= bmi < 24.9:
-        status = "Normal (Fit)"
-        color = "green"
+        status, color = "Normal (Fit)", "green"
     elif 25 <= bmi < 29.9:
-        status = "Kilolu"
-        color = "orange"
+        status, color = "Kilolu", "orange"
     elif 30 <= bmi < 34.9:
-        status = "Obez"
-        color = "red"
+        status, color = "Obez", "red"
     else:
-        status = "Aşırı Obez"
-        color = "darkred"
+        status, color = "Aşırı Obez", "darkred"
         
     st.markdown(f"**Durum:** <span style='color:{color}; font-size:18px; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
     
@@ -187,7 +171,6 @@ with st.sidebar:
     
     # Programı İndir Butonu
     if st.button("📥 Programı İndir"):
-        # Son cevabı al
         if "messages" in st.session_state and st.session_state.messages:
             last_response = st.session_state.messages[-1]["content"]
             st.download_button(
@@ -201,7 +184,7 @@ with st.sidebar:
 
     if st.button("🗑️ Sohbeti Temizle"):
         st.session_state.messages = []
-        st.experimental_rerun()
+        st.rerun()
 
 # RAG Sistemini Başlat
 vectorstore = init_rag()
@@ -209,13 +192,8 @@ vectorstore = init_rag()
 if vectorstore is None:
     st.error("Veri klasörü bulunamadı veya boş! Lütfen 'data' klasörüne PDF/TXT ekleyin.")
 else:
-    # Zinciri Kur
+    # Retriever oluştur
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.3),
-        chain_type="stuff",
-        retriever=retriever
-    )
 
     # Chat Arayüzü
     st.header("🤖 V-Fit Asistanı")
@@ -235,7 +213,11 @@ else:
         # Konuşma Geçmişini Hazırla
         chat_history = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages[-5:]])
         
-        # Gelişmiş Prompt (Persona & Yapı)
+        # Retrieval: İlgili dökümanları çek
+        relevant_docs = retriever.get_relevant_documents(prompt)
+        context = "\n\n".join([doc.page_content for doc in relevant_docs])
+        
+        # Gelişmiş Prompt
         system_instruction = f"""
         BİR ROL YAP: Sen "V-Fit AI Koçu"sun. İnsanlara sağlık, fitness ve beslenme konularında yardımcı olan, ZEKİ, KİBAR, MOTİVE EDİCİ ve PROFESYONEL bir yapay zekasın.
         
@@ -247,69 +229,68 @@ else:
         - Zaman: Haftada {frequency} gün antrenman yapabilir.
         
         KURALLAR VE DAVRANIŞLAR:
-        1. **Nezaket & Motivasyon:** Her cevaba nazik bir selamlama veya motive edici bir sözle başla. (Örn: "Harika bir hedef {name}!", "Seni azimli gördüm!")
-        2. **Sadece Fitness:** Eğer kullanıcı fitness dışı, anlamsız veya hakaret içeren bir şey söylerse; kibarca "Ben sadece bir fitness antrenörüyüm, lütfen antrenman veya beslenme konuşalım." diyerek konuyu kapat. Asla kabalaşma.
-        3. **Program Formatı (4+4+4+4):** Kullanıcı "program" istediğinde, TEK BİR 16 haftalık tablo yerine, süreci 4 bloğa bölerek anlat:
+        1. **Nezaket & Motivasyon:** Her cevaba nazik bir selamlama veya motive edici bir sözle başla.
+        2. **Sadece Fitness:** Eğer kullanıcı fitness dışı bir şey söylerse; kibarca "Ben sadece bir fitness antrenörüyüm, lütfen antrenman veya beslenme konuşalım." diyerek konuyu kapat.
+        3. **Program Formatı (4+4+4+4):** Kullanıcı "program" istediğinde, süreci 4 bloğa bölerek anlat:
            - **1. Blok (Hafta 1-4):** Adaptasyon ve Alışma.
            - **2. Blok (Hafta 5-8):** Gelişim ve Yüklenme.
            - **3. Blok (Hafta 9-12):** Güç ve Dayanıklılık.
            - **4. Blok (Hafta 13-16):** Definasyon ve Sonuç.
-           *Tabloyu detaylı hazırla ve haftalık gün sayısına ({frequency} gün) sadık kal.*
-        4. **Video Entegrasyonu:** Sen sadece hareket isimlerini doğru yaz (Örn: "Smith Machine Close Grip Bench Press"). Linkleri veya videoları eklemene gerek yok, sistem otomatik ekleyecek.
-        5. **Link Formatı:** Link ekleme işini sisteme bırak.
-        6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) hareket isimlerini kullan.
-        6. **Dil Desteği (ÖNEMLİ):** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps/Forearm", "Omuz" derse "Shoulder/Deltoid" olarak eşleştir. Veritabanındaki İngilizce (veya latince) terimleri kullanıcıya açıkla.
-        7. **Akıllı Tepki (YENİ):** Kullanıcı sadece "Merhaba", "Selam", "Nasılsın" gibi tanışma cümleleri kurarsa, direkt program hazırlama. Hal hatır sor, hedefini teyit et ve motive et. Sadece "Program hazırla" veya spesifik bir teknik soru gelirse program moduna geç.
-        8. **Sağlık Uyarısı (Disclaimer):** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
+        4. **Video Entegrasyonu:** Sen sadece hareket isimlerini doğru yaz. Linkleri sistem otomatik ekleyecek.
+        5. **Dil Desteği:** Kullanıcı "Arka Kol" derse bunu "Triceps", "Ön Kol" derse "Biceps", "Omuz" derse "Shoulder" olarak eşleştir.
+        6. **Akıllı Tepki:** Kullanıcı sadece "Merhaba", "Selam" gibi tanışma cümleleri kurarsa, direkt program hazırlama. Hal hatır sor, hedefini teyit et ve motive et.
+        7. **Sağlık Uyarısı:** Tıbbi tavsiye vermediğini, spora başlamadan önce doktora danışılması gerektiğini nazikçe hatırlat.
         
         MİSYONUN: Kullanıcıyı hedefine ({goal}) ulaştırmak için en bilimsel ve uygulanabilir yolu çizmek.
 
+        İŞTE KAYNAK BİLGİLER (Bu bilgileri kullanarak cevap ver):
+        {context}
         
         Geçmiş Konuşmalar:
         {chat_history}
         
         Kullanıcı Sorusu: {prompt}
+        
+        Türkçe cevap ver:
         """
         
-        # Hata yönetimi için try-except bloğu (zaten dışarıda var sistem tarafından yönetilen, ama promptu güvenli hale getirdik)
-        full_query = f"{system_instruction} \n Cevap:"
-        
-        # .run() yerine .invoke() kullanalım (Daha güvenli ve modern)
         with st.spinner('V-Fit Koç düşünüyor ve program hazırlıyor...'):
-            result_dict = qa_chain.invoke({"query": full_query})
-            raw_response = result_dict['result']
+            try:
+                # Google Genai SDK with Native API
+                response = client.models.generate_content(
+                    model='gemini-2.0-flash-exp',
+                    contents=system_instruction
+                )
+                
+                raw_response = response.text
+                
+            except Exception as e:
+                raw_response = f"❌ Üzgünüm, bir hata oluştu: {str(e)}\n\nLütfen API anahtarınızı kontrol edin veya daha sonra tekrar deneyin."
         
         # --- POST-PROCESSING: Link Düzeltme ---
-        # LLM'in uydurduğu linkleri temizleyip kendi veritabanımızdan doğrusunu çakalım
-        # Öncelik: LLM'e "link koyma" desek bile koyabilir. O yüzden önce kendi DB'mizden geçirip garantili linkleri ekleyelim.
         final_response = video_db.get_video_link(raw_response)
         
         with st.chat_message("assistant"):
             st.markdown(final_response)
             
-            # 1. Video linkini ayıkla ve oynat
+            # Video linkini göster
             video_links = re.findall(r'(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+|https?://youtu\.be/[\w-]+)', final_response)
             if video_links:
                 st.video(video_links[0])
             
-            # 2. Kas Grubu Görselini veya PDF dosyasını Bul ve Göster
-            # Cevap içinde geçen kelimelerle dosya isimlerini eşleştir
-            found_files = [] # Aynı dosyayı tekrar tekrar göstermemek için
+            # Kas Grubu Görselini veya PDF dosyasını Bul ve Göster
+            found_files = []
             
             for file in os.listdir("data"):
                 file_lower = file.lower()
                 file_name_clean = os.path.splitext(file_lower)[0]
                 keywords = file_name_clean.split()
                 
-                # Eşleşme kontrolü (Anahtar kelime cevapta geçiyor mu?)
-                # Basit bir set intersection mantığı veya kelime kelime kontrol
-                # Örn: "arka kol" dosyasını bulmak için hem "arka" hem "kol" cevapta geçmeli mi? Evet.
                 match_count = 0
                 for kw in keywords:
-                    if kw in response.lower():
+                    if kw in raw_response.lower():
                         match_count += 1
                 
-                # Eğer dosya ismindeki tüm kelimeler cevapta geçiyorsa (veya en az %80'i)
                 if match_count == len(keywords) and len(keywords) > 0:
                     if file not in found_files:
                         st.info(f"💡 İlgili Kaynak Bulundu: {file}")
@@ -318,7 +299,6 @@ else:
                         if file.endswith((".jpg", ".png", ".jpeg", ".webp")):
                             st.image(file_path, caption=file_name_clean, use_container_width=True)
                         elif file.endswith(".pdf"):
-                            # PDF indirme butonu koyalım veya görüntüleyelim (Streamlit PDF viewer gerekebilir, şimdilik indirme)
                             with open(file_path, "rb") as pdf_file:
                                 st.download_button(label=f"📄 {file} İndir", data=pdf_file, file_name=file, mime="application/pdf")
                         
